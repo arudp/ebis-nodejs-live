@@ -1,0 +1,29 @@
+{
+  "name": "ebis-nodejs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "cli": "ts-node -r tsconfig-paths/register src/cli.ts",
+    "cli-loop": "ts-node -r tsconfig-paths/register src/cli-loop.ts",
+    "test": "jest",
+    "test-show-all": "jest tests/cli-loop.test.ts -t 'should show all tasks'",
+    "test-show-by-name": "jest tests/cli-loop.test.ts -t 'should filter tasks by name'",
+    "test-delete": "jest tests/cli-loop.test.ts -t 'should delete by index'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.13.4",
+    "jest": "^29.7.0",
+    "mock-stdin": "^1.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "tsconfig-paths": "^4.2.0"
+  }
+}
