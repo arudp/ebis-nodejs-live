@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+  <title>Form</title>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+</head>
+
+<body>
+  <!--
+    action: route to direct the HTTP method to
+    method: HTTP method (only GET + POST supported - why?)
+  -->
+  <h1>GET form</h1>
+  <form action="/form" method="GET">
+    <fieldset>
+      <label for="GETname">Name</label>
+      <input type="text" name="name" id="GETname" required></input>
+
+      <label for="GETdescription">Description</label>
+      <textarea type="text" name="description" id="GETdescription" required></textarea>
+    </fieldset>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h1>POST form</h1>
+  <form action="/form" method="POST">
+    <fieldset>
+      <label for="POSTname">Name</label>
+      <input type="text" name="name" id="POSTname" required></input>
+
+      <label for="POSTdescription">Description</label>
+      <textarea type="text" name="description" id="POSTdescription" required></textarea>
+    </fieldset>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h1>PUT form</h1>
+  <form action="/form" method="PUT">
+    <fieldset>
+      <label for="PUTname">Name</label>
+      <input type="text" name="name" id="PUTname" required></input>
+
+      <label for="PUTdescription">Description</label>
+      <textarea type="text" name="description" id="PUTdescription" required></textarea>
+    </fieldset>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h1>DELETE form</h1>
+  <form action="/form" method="DELETE">
+    <fieldset>
+      <label for="DELETEname">Name</label>
+      <input type="text" name="name" id="DELETEname" required></input>
+
+      <label for="DELETEdescription">Description</label>
+      <textarea type="text" name="description" id="DELETEdescription" required></textarea>
+    </fieldset>
+    <button type="submit">Submit</button>
+  </form>
+
+</body>
+
+</html>

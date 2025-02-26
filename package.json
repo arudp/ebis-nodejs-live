@@ -4,26 +4,42 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "cli": "ts-node -r tsconfig-paths/register src/cli.ts",
-    "cli-loop": "ts-node -r tsconfig-paths/register src/cli-loop.ts",
+    "dev": "ts-node -r tsconfig-paths/register src/index.ts",
     "test": "jest",
-    "test-show-all": "jest tests/cli-loop.test.ts -t 'should show all tasks'",
-    "test-show-by-name": "jest tests/cli-loop.test.ts -t 'should filter tasks by name'",
-    "test-delete": "jest tests/cli-loop.test.ts -t 'should delete by index'"
+    "test-all-get": "jest tests/index.test.ts -t 'GET /search'",
+    "test-get": "jest tests/index.test.ts -t 'should return all the tasks'",
+    "test-get-index": "jest tests/index.test.ts -t 'should return only the indexed task'",
+    "test-get-not-found": "jest tests/index.test.ts -t 'should return 404'",
+    "test-all-create": "jest tests/index.test.ts -t 'POST /create'",
+    "test-create": "jest tests/index.test.ts -t 'should create a task'",
+    "test-create-no-desc": "jest tests/index.test.ts -t 'should create a task - no description'",
+    "test-create-fail": "jest tests/index.test.ts -t 'should fail at creating a task - no name'",
+    "test-all-delete": "jest tests/index.test.ts -t 'POST /delete'",
+    "test-delete": "jest tests/index.test.ts -t 'should delete a task'",
+    "test-delete-out-of-bounds": "jest tests/index.test.ts -t 'should delete nothing'",
+    "test-all-update": "jest tests/index.test.ts -t 'POST /update'",
+    "test-update": "jest tests/index.test.ts -t 'should update a task'",
+    "test-fail-update-no-name": "jest tests/index.test.ts -t 'should fail - no name'",
+    "test-fail-update-bad-index": "jest tests/index.test.ts -t 'should fail - bad index'",
+    "test-fail-update-no-index": "jest tests/index.test.ts -t 'should fail - no index'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.13.4",
+    "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
     "mock-stdin": "^1.0.0",
+    "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   },
   "dependencies": {
+    "express": "^4.21.2",
     "tsconfig-paths": "^4.2.0"
   }
 }
