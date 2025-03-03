@@ -5,8 +5,8 @@ import { Task } from "src/types";
 
 describe("app", () => {
   const mockInitTasks: Array<Task> = [
-    { name: "Task 1", description: "Description 1" },
-    { name: "Task 2", description: "Description 2" },
+    { name: "Task 1", description: "Description 1", isDone: true },
+    { name: "Task 2", description: "Another description", isDone: false },
   ];
 
   let testTasks: Array<Task>;
@@ -29,140 +29,173 @@ describe("app", () => {
     jest.clearAllTimers();
   });
 
-  describe("GET /search", () => {
-    it("should return all the tasks", async () => {
-      const response = await request(app).get("/search");
-      expect(response.status).toBe(200);
-      testTasks.forEach((task) => {
-        expect(response.text).toContain(task.name);
-        expect(response.text).toContain(task.description);
-      });
-    });
+  describe("GET /tasks", () => {
+    it.each([
+      ["done tasks", "done=1", [0]],
+      ["not done tasks", "done=false", [1]],
+      ["not done bad string", "done=random-string", [1]],
+      ["no match", "done=true&name=a+2", []],
+      ["index and done", "done=true&index=1", [0]],
+      ["by name", "name=tAsK", [0, 1]],
+      ["by description", "description=ther", [1]],
+      ["by indexes", "index=3,2,4,1", [0, 1]],
+    ])(
+      "should find - %s",
+      async (_, queryParams: string, expectedTaskIndexes: Number[]) => {
+        const response = await request(app).get(`/tasks?${queryParams}`);
+        expect(response.status).toBe(200);
+        const expectedTasks = testTasks.filter((_, index: Number) =>
+          expectedTaskIndexes.includes(index)
+        );
+
+        expect(response.body).toEqual(expect.arrayContaining(expectedTasks));
+      }
+    );
 
     it("should return only the indexed task", async () => {
-      const response = await request(app).get("/search?index=1");
+      const response = await request(app).get("/tasks/2");
       expect(response.status).toBe(200);
 
       const expectedTask = testTasks[1];
 
-      expect(response.text).toContain(expectedTask.name);
-      expect(response.text).toContain(expectedTask.description);
+      expect(response.body.name).toBe(expectedTask.name);
+      expect(response.body.description).toBe(expectedTask.description);
     });
     it("should return 404", async () => {
-      const response = await request(app).get("/search?index=2");
+      const response = await request(app).get("/tasks/0");
       expect(response.status).toBe(404);
     });
   });
-  describe("POST /create", () => {
-    it("should create a task", async () => {
-      const newTask = {
-        name: "A new task",
-        description: "New task description",
-      };
-      const response = await request(app)
-        .post("/create")
-        .type("form")
-        .send(newTask);
-
-      expect(response.status).toBe(201);
-
-      expect(testTasks.length).toBe(3);
-      expect(testTasks.find((t) => t === newTask)).toBeTruthy;
-    });
-    it("should create a task - no description", async () => {
-      const newTask = {
-        name: "A new task",
-      };
-      const response = await request(app)
-        .post("/create")
-        .type("form")
-        .send(newTask);
-
-      expect(response.status).toBe(201);
-
-      expect(testTasks.length).toBe(3);
-      expect(testTasks.find((t) => t === newTask)).toBeTruthy;
-    });
-    it("should fail at creating a task - no name", async () => {
-      const newTask = {
-        description: "New task description",
-      };
-      const response = await request(app)
-        .post("/create")
-        .type("form")
-        .send(newTask);
-
-      expect(response.status).toBe(400);
-
-      expect(testTasks.length).toBe(2);
-      expect(testTasks.find((t) => t === newTask)).toBeFalsy;
-    });
-  });
-
-  describe("POST /delete", () => {
-    it("should delete a task", async () => {
-      const tasksPreDelete = [...testTasks];
-
-      const response = await request(app)
-        .post("/delete")
-        .type("form")
-        .send({ index: 0 });
-
-      expect(response.status).toBe(200);
-
-      expect(testTasks.length).toBe(1);
-      expect(testTasks[0]).toEqual(tasksPreDelete[1]);
-    });
-    it("should delete nothing", async () => {
-      const tasksPreDelete = [...testTasks];
-
-      const response = await request(app)
-        .post("/delete")
-        .type("form")
-        .send({ index: 2 });
-
-      expect(response.status).toBe(200);
-
-      expect(testTasks.length).toBe(2);
-      expect(testTasks).toEqual(tasksPreDelete);
-    });
-  });
-
-  describe("POST /update", () => {
-    it("should update a task", async () => {
-      const updatedTask = { name: "An updated task", index: 0 };
-      const removedTask = testTasks[0];
-      const response = await request(app)
-        .post("/update")
-        .type("form")
-        .send(updatedTask);
-
-      expect(response.status).toBe(200);
-
-      expect(testTasks.length).toBe(2);
-      expect(
-        testTasks.find((t) => t.name === updatedTask.name && !t.description)
-      ).toBeTruthy;
-      expect(testTasks.find((t) => t === removedTask)).toBeFalsy;
-    });
+  describe("POST /tasks", () => {
     it.each([
-      ["no name", { description: "a description", index: 0 }],
-      ["bad index", { name: "a name", index: -1 }],
-      ["no index", { description: "a description" }],
+      ["create new task with just a name", { name: "New task" }, 201],
+      [
+        "create new task with name and done",
+        { name: "New task", done: true },
+        201,
+      ],
+      [
+        "create new task with name and description",
+        { name: "New task", description: "desc" },
+        201,
+      ],
+      [
+        "create new task with all fields",
+        { name: "New task", description: "desc", done: false },
+        201,
+      ],
+      ["fail - empty name", { name: "" }, 400],
+      ["fail - no name", { description: "A description" }, 400],
+      ["fail - existing name", { name: "task 1" }, 409],
+      ["fail - bad name type", { name: 1 }, 400],
+      ["fail - bad description type", { description: 1 }, 400],
+      ["fail - bad done type", { done: 1 }, 400],
     ])(
-      "should fail - %s",
+      "should %s",
       async (
         _,
-        body: { description?: string; name?: string; index?: number }
+        body: { name?: any; description?: any; done?: any },
+        expectedStatus: number
       ) => {
-        const preUpdate = [...testTasks];
-        const response = await request(app)
-          .post("/update")
-          .type("form")
-          .send(body);
+        const response = await request(app).post("/tasks").send(body);
 
-        expect(response.status).toBe(400);
-        expect(testTasks).toEqual(preUpdate);
+        const isSuccessful = expectedStatus === 201;
+
+        expect(response.status).toBe(expectedStatus);
+        expect(testTasks).toHaveLength(
+          mockInitTasks.length + Number(isSuccessful)
+        );
+
+        if (isSuccessful) {
+          const newTask: any = { name: body.name, isDone: body.done || false };
+          if (body.description !== undefined) {
+            newTask.description = body.description;
+          }
+          expect(testTasks).toContainEqual(newTask);
+        } else {
+          expect(testTasks).toEqual(mockInitTasks);
+        }
+      }
+    );
+  });
+
+  describe("DELETE /tasks", () => {
+    it.each([
+      ["delete a task", 1],
+      ["return 200", 10],
+    ])("should %s", async (_, index: number) => {
+      const response = await request(app).delete(`/tasks/${index}`);
+
+      expect(response.status).toBe(200);
+
+      const expectedLength =
+        mockInitTasks.length - Number(index < mockInitTasks.length);
+      expect(testTasks).toHaveLength(expectedLength);
+      expect(testTasks).not.toContainEqual(mockInitTasks[index - 1]);
+    });
+  });
+
+  describe("PUT /tasks", () => {
+    it.each([
+      ["update task with just a name", 1, { name: "Updated task" }, 200],
+      [
+        "update task with name and done",
+        1,
+        { name: "Updated task", done: true },
+        200,
+      ],
+      [
+        "update task with name and description",
+        1,
+        { name: "Updated task", description: "desc" },
+        200,
+      ],
+      [
+        "update task with all fields",
+        1,
+        { name: "Updated task", description: "desc", done: false },
+        200,
+      ],
+      [
+        "update task with just description",
+        2,
+        { description: "A description" },
+        200,
+      ],
+      ["update task with just isDone", 1, { done: false }, 200],
+      ["fail - 404", 0, { name: "Something" }, 404],
+      ["fail - existing name", 1, { name: "task 2" }, 409],
+      ["fail - bad name type", 2, { name: 1 }, 400],
+      ["fail - bad description type", 1, { description: 1 }, 400],
+      ["fail - bad done type", 1, { done: 1 }, 400],
+    ])(
+      "should %s",
+      async (
+        _,
+        index: number,
+        body: { name?: any; description?: any; done?: any },
+        expectedStatus: number
+      ) => {
+        const response = await request(app).put(`/tasks/${index}`).send(body);
+
+        const isSuccessful = expectedStatus === 200;
+
+        expect(response.status).toBe(expectedStatus);
+        expect(testTasks).toHaveLength(mockInitTasks.length);
+
+        if (isSuccessful) {
+          const updatedTask = mockInitTasks.find(
+            (_, n: number) => n === index - 1
+          ) as Task;
+          const updates = {
+            name: body.name ?? updatedTask.name,
+            description: body.description ?? updatedTask.description,
+            isDone: body.done ?? updatedTask.isDone,
+          };
+          expect(testTasks).toContainEqual({ ...updatedTask, ...updates });
+        } else {
+          expect(testTasks).toEqual(mockInitTasks);
+        }
       }
     );
   });
