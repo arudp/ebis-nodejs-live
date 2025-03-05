@@ -1,6 +1,14 @@
 import express, { Express, Request, Response } from "express";
-import { readTasks, writeTasks } from "./file-ops";
-import { Task } from "./types";
+import { readTasks, readUsers, writeTasks, writeUsers } from "./file-ops";
+import { Task, User } from "./types";
+import {
+  Document,
+  InsertOneResult,
+  ObjectId,
+  UpdateResult,
+  WithId,
+} from "mongodb";
+import { client, dbName } from "../db/mongodb";
 
 const app: Express = express();
 const port: number = 3000;
@@ -13,132 +21,219 @@ app.get("/", (req: Request, res: Response) => {
   res.redirect("/tasks");
 });
 
-// TODO: All index-based endpoints work on a zero-based array. However, it'd be
-// more intuitive to work with one-based indexes
-// For the tests to pass, they need to be updated accordingly
+app.get("/tasks", async (req: Request, res: Response) => {
+  // TODO: Allow filtering by name/description/isDone/comma-separated ids
+  // as we did with the file-based tasks
+  try {
+    const taskDocuments: WithId<Document>[] = await client
+      .db(dbName)
+      .collection("tasks")
+      .find()
+      .toArray();
+    const tasks: Task[] = taskDocuments.map(
+      (taskDocument: WithId<Document>) => {
+        const { _id, name, done, description } = taskDocument;
+        return {
+          id: _id.toString(),
+          name: String(name),
+          description: String(description),
+          isDone: !!done,
+        };
+      }
+    );
 
-app.get("/tasks", (req: Request, res: Response) => {
+    res.send(tasks);
+  } catch (error) {
+    console.error("Error reading tasks from DB:", error);
+    res.status(500).send([]);
+  }
+});
+
+app.get("/tasks/:id", async (req: Request, res: Response) => {
+  try {
+    const taskDocument: WithId<Document> | null = await client
+      .db(dbName)
+      .collection("tasks")
+      // What happens if the id is not a valid ObjectId? (e.g. too short)
+      .findOne({ _id: new ObjectId(req.params.id) });
+
+    if (!taskDocument) {
+      res.status(404).send("Task not found");
+    } else {
+      const { _id, name, done, description } = taskDocument;
+      res.send({ id: _id.toString(), name, done, description });
+    }
+  } catch (error) {
+    console.error("Error reading task from DB:", error);
+    res.status(500).send("Error reading task");
+  }
+});
+
+app.post("/tasks", async (req: Request, res: Response) => {
+  const { name, description, done } = req.body;
+  const newTask: Task = { name, description, isDone: done };
+  // TODO: Error on non-unique names and bad params as we did on the file ones
+  // - Name is required
+  // - Description, if present, has to be a string
+  // - isDone (received as done), if not present, defaults to false. If present, it has to be a boolean
+
+  try {
+    const result: InsertOneResult<Document> = await client
+      .db(dbName)
+      .collection("tasks")
+      .insertOne(newTask);
+
+    // Any of these can be done, or result can be ignored
+    // newTask.id = result.insertedId.toString();
+    // newTask.id = delete newTask._id;
+    console.log("Task added", newTask);
+    res.send(201);
+  } catch (error) {
+    console.error("Error adding task to DB:", error);
+    res.send(500);
+  }
+});
+
+app.delete("/tasks/:id", async (req: Request, res: Response) => {
+  const id = req.params.id;
+
+  try {
+    const result = await client
+      .db(dbName)
+      .collection("tasks")
+      .deleteOne({ _id: new ObjectId(id) });
+    console.log(`Tasks deleted: ${result.deletedCount}`);
+
+    res.status(200).send();
+  } catch (error) {
+    // TODO: Try to get to this point by running a bad request!
+    console.error("Error deleting tasks in DB:", error);
+    res.status(500).send();
+  }
+});
+
+app.put("/tasks/:id", async (req: Request, res: Response) => {
+  const id = req.params.id;
+  const { name, description, done } = req.body;
+  const update: any = {};
+
+  // TODO: This is wrong! Fix validations so we don't get surprising updates
+  if (!!name) update.name = name;
+  if (!!description) update.description = description;
+  if (!!done) update.isDone = done;
+
+  try {
+    const updatedTask = await client
+      .db(dbName)
+      .collection("tasks")
+      .findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: update },
+        { returnDocument: "after" }
+      );
+
+    if (updatedTask === null) {
+      res.status(404).send("Task not found");
+    } else {
+      console.log("Task updated", updatedTask);
+      // TODO: Again, something's not quite right (_id field)
+      res.status(200).send(updatedTask);
+    }
+  } catch (error) {
+    console.error("Error updating task in DB:", error);
+    res.status(500).send("Error updating task");
+  }
+});
+
+app.get("/users", (req, res) => {
   const params = req.query;
+  // TODO: Let's do this on MongoDB!
+  // As expected, users will go in client.db(dbName).collection("users")
+  // User can be filtered by email or by name but, naturally, not by password
 
-  let tasks: Task[] = readTasks();
+  let users: User[] = readUsers();
+
   if (params) {
-    const { name, description, index, done } = params;
+    const { name, email, index } = params;
 
-    // TODO: Change how we process "index" so that it filters by a list of
-    // indexes. In other words, if "/tasks?index=1,3" I'll get the tasks
-    // indexed either 1 or 3 (i.e. 0 and 2 since the reindexing still applies)
-
-    tasks = tasks.filter((task: Task, taskIndex: number) => {
+    users = users.filter((user, userIndex) => {
       if (
         name &&
-        !task.name.toLowerCase().includes(String(name).toLowerCase())
+        !user.name.toLowerCase().includes(String(name).toLowerCase())
       ) {
         return false;
       }
       if (
-        description &&
-        !task.description
-          .toLowerCase()
-          .includes(String(description).toLowerCase())
+        email &&
+        !user.email.toLowerCase().includes(String(email).toLowerCase())
       ) {
         return false;
       }
-      if (done && task.isDone != ["true", "1"].includes(String(done))) {
-        return false;
-      }
-      if (index && taskIndex != Number(index)) {
+      if (index && userIndex != Number(index)) {
         return false;
       }
       return true;
     });
   }
 
-  res.send(tasks);
-});
-app.get("/tasks/:id", (req: Request, res: Response) => {
-  // TODO
-  res.send("Not implemented");
+  res.send(users.map((user: User) => ({ name: user.name, email: user.email })));
 });
 
-app.post("/tasks", (req: Request, res: Response) => {
-  const { name, description, done } = req.body;
-  // ? Why do we use `true` as a boolean here?
-  const isDone = done !== undefined && done !== null && done === true;
-
-  // TODO: The creation must comply with the following requirements:
-  // - If data is bad (name not there or empty), return 400
-  // - If type is bad for any field (e.g. int for name), also return 400
-  // - If there's a repeated name (case insensitive), return 409
-  const newTask: Task = { name, description, isDone };
-
-  writeTasks([...readTasks(), newTask]);
-
-  res.status(201).send(newTask);
-});
-
-app.delete("/tasks/:index", (req: Request, res: Response) => {
-  // TODO: find and delete the task by index. If not found -> return 200
-  res.send("Not implemented");
-});
-
-app.put("/tasks/:index", (req: Request, res: Response) => {
-  // TODO: fix the endpoint so that if a field is not given, it doesn't get
-  // updated.
-  // TODO: The update follows the same rules as the creation:
-  // - If data is bad (name not there or empty), return 400
-  // - If type is bad for any field (e.g. int for name), also return 400
-  // - If there's a repeated name (case insensitive, not the target task), return 409
-
-  const toBeUpdated: Task | undefined = readTasks().find(
-    (_, index: number) => index === Number(req.params.index)
-  );
-
-  if (toBeUpdated === undefined) {
-    res.status(404).send("Not Found");
+app.get("/users/:index", (req, res) => {
+  // TODO: MongoDB by id
+  const user = readUsers()[Number(req.params.index) - 1];
+  if (user) {
+    res.send({ name: user.name, email: user.email });
   } else {
-    const { name, description, done } = req.body;
-    // ? What's the problem here?
-    const isDone = done !== undefined && done !== null && done === true;
-    const updatedTask = { name, description, isDone };
-    writeTasks(
-      readTasks().map((task: Task, index: number) => {
-        if (index === Number(req.params.index)) {
-          return updatedTask;
-        } else {
-          return task;
-        }
-      })
-    );
-
-    res.send();
+    res.status(404).send();
   }
 });
 
-// TODO: New User Entrypoints
-// Create a users.json file in the same directory as tasks.json
-// A User has a name, an email and a password, all strings
-// We'll have the following endpoints
-//
-// GET /users
-// Return for each user the name and email, but not the password
-//
-// GET /users/:index
-// Return a user (again no password) by index. 404 if it doesn't exist
-//
-// POST /register
-// Create a new user, all three fields are required and must be a string
-// The email has to have
-// - Some text (one or more characters)
-// - An "@" symbol
-// - Some more text
-// - a "."
-// - Then some more text
-// If any of these constraints fail -> return a 400
-// Otherwise create the user and return a 201
-//
-// POST /login
-// Receive an email and a password
-// Return 200 if both match a user in the file, otherwise 401
+app.post("/register", (req, res) => {
+  // TODO:
+  // - A user must have all three fields
+  // - The email must follow the pattern XXX@YYY.ZZZ
+  // - A user name can be repeated, but an email must be unique
+  const { name, email, password } = req.body;
+  if (
+    !name ||
+    !email ||
+    !password ||
+    typeof name != "string" ||
+    typeof email != "string" ||
+    typeof password != "string"
+  ) {
+    res.status(400).send("name, email and password required");
+  } else {
+    const [beforeAt, afterAt] = String(email).split("@");
+    if (!beforeAt || !afterAt || afterAt.split(".").length != 2) {
+      res.status(400).send("email has to follow pattern xxx@yyy.zzz");
+    } else {
+      writeUsers([...readUsers(), { name, email, password }]);
+      res.send(201);
+    }
+  }
+});
+
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    // TODO: Should these check for undefined or null or are they ok as they are?
+    res.status(400).send("email and password required");
+  } else {
+    const user = readUsers().find(
+      (user) => user.email === email && user.password === password
+    );
+    console.log(email, password, user);
+    if (user) {
+      res.send({ name: user.name, email: user.email });
+    } else {
+      res.status(401).send("Wrong credentials");
+    }
+  }
+});
+
+export { app };
 
 // Start only if it's executed directly, not imported
 if (require.main === module) {
@@ -146,5 +241,3 @@ if (require.main === module) {
     console.log(`Example app listening on port ${port}`);
   });
 }
-
-export { app };
