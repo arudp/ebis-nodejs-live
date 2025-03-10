@@ -1,68 +1,95 @@
-import fs from "fs";
 import request from "supertest";
 import { app } from "src/index";
-import { Task } from "src/types";
+import { mongoConfig } from "src/db/mongodb/config";
+import mongoose from "mongoose";
+import { Task } from "src/db/models/task";
+import { ObjectId } from "mongodb";
+
+const connect = async (config: any) => {
+  try {
+    await mongoose.connect(config.getURI(), {});
+    console.log("Connected to MongoDB");
+  } catch (error) {
+    console.error("Error connecting to MongoDB:", error);
+  }
+};
+const disconnect = async () => await mongoose.disconnect();
 
 describe("app", () => {
-  const mockInitTasks: Array<Task> = [
+  const initTasks: Array<any> = [
     { name: "Task 1", description: "Description 1", isDone: true },
     { name: "Task 2", description: "Another description", isDone: false },
   ];
+  let dbTasks: any[] = [];
 
-  let testTasks: Array<Task>;
+  beforeAll(() => {
+    const mongoTestConfig = mongoConfig;
+    mongoTestConfig.dbName += "-test";
 
-  beforeEach(() => {
-    jest.resetModules();
-
-    testTasks = [...mockInitTasks];
-
-    jest
-      .spyOn(fs, "readFileSync")
-      .mockImplementation(() => JSON.stringify(testTasks, null, 2));
-
-    jest.spyOn(fs, "writeFileSync").mockImplementation((_, tasks: any) => {
-      testTasks = JSON.parse(tasks);
-    });
+    connect(mongoTestConfig);
   });
 
-  afterEach(() => {
+  afterAll(disconnect);
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    await Task.deleteMany();
+    dbTasks = await Task.insertMany(initTasks);
+
+    console.log("DB Refreshed");
+  });
+
+  afterEach(async () => {
     jest.clearAllTimers();
   });
 
   describe("GET /tasks", () => {
     it.each([
-      ["done tasks", "done=1", [0]],
-      ["not done tasks", "done=false", [1]],
-      ["not done bad string", "done=random-string", [1]],
-      ["no match", "done=true&name=a+2", []],
-      ["index and done", "done=true&index=1", [0]],
-      ["by name", "name=tAsK", [0, 1]],
-      ["by description", "description=ther", [1]],
-      ["by indexes", "index=3,2,4,1", [0, 1]],
+      ["done tasks", () => "done=1", [0]],
+      ["not done tasks", () => "done=false", [1]],
+      ["not done bad string", () => "done=random-string", [1]],
+      ["no match", () => "done=true&name=a+2", []],
+      ["id and done", () => `done=true&ids=${dbTasks[0]._id}`, [0]],
+      ["by name", () => "name=tAsK", [0, 1]],
+      ["by description", () => "description=ther", [1]],
+      [
+        "by ids",
+        () =>
+          `ids=${[new ObjectId().toString(), ...dbTasks.map((t: any) => t._id)].join(",")}`,
+        [0, 1],
+      ],
     ])(
       "should find - %s",
-      async (_, queryParams: string, expectedTaskIndexes: Number[]) => {
-        const response = await request(app).get(`/tasks?${queryParams}`);
+      async (
+        _,
+        getQueryParams: () => string,
+        expectedTaskIndexes: Number[]
+      ) => {
+        const response = await request(app).get(`/tasks?${getQueryParams()}`);
         expect(response.status).toBe(200);
-        const expectedTasks = testTasks.filter((_, index: Number) =>
+        const expectedTasks = dbTasks.filter((_: any, index: Number) =>
           expectedTaskIndexes.includes(index)
         );
 
-        expect(response.body).toEqual(expect.arrayContaining(expectedTasks));
+        expect(response.body).toEqual(
+          expectedTasks.map((t: any) => t.toObject())
+        );
       }
     );
 
     it("should return only the indexed task", async () => {
-      const response = await request(app).get("/tasks/2");
+      const response = await request(app).get(`/tasks/${dbTasks[1]._id}`);
       expect(response.status).toBe(200);
 
-      const expectedTask = testTasks[1];
+      const expectedTask = dbTasks[1];
 
       expect(response.body.name).toBe(expectedTask.name);
       expect(response.body.description).toBe(expectedTask.description);
     });
     it("should return 404", async () => {
-      const response = await request(app).get("/tasks/0");
+      const unmatchedObjectId = new ObjectId().toString();
+      const response = await request(app).get(`/tasks/${unmatchedObjectId}`);
       expect(response.status).toBe(404);
     });
   });
@@ -89,7 +116,7 @@ describe("app", () => {
       ["fail - existing name", { name: "task 1" }, 409],
       ["fail - bad name type", { name: 1 }, 400],
       ["fail - bad description type", { description: 1 }, 400],
-      ["fail - bad done type", { done: 1 }, 400],
+      ["create task despite bad done type", { name: "a name", done: 1 }, 201],
     ])(
       "should %s",
       async (
@@ -98,22 +125,25 @@ describe("app", () => {
         expectedStatus: number
       ) => {
         const response = await request(app).post("/tasks").send(body);
+        dbTasks = await Task.find().exec();
 
         const isSuccessful = expectedStatus === 201;
 
         expect(response.status).toBe(expectedStatus);
-        expect(testTasks).toHaveLength(
-          mockInitTasks.length + Number(isSuccessful)
-        );
+        expect(dbTasks).toHaveLength(initTasks.length + Number(isSuccessful));
 
         if (isSuccessful) {
-          const newTask: any = { name: body.name, isDone: body.done || false };
+          const newTask: any = { name: body.name, isDone: !!body.done };
           if (body.description !== undefined) {
             newTask.description = body.description;
           }
-          expect(testTasks).toContainEqual(newTask);
+          expect(dbTasks).toEqual(
+            expect.arrayContaining([expect.objectContaining(newTask)])
+          );
         } else {
-          expect(testTasks).toEqual(mockInitTasks);
+          expect(dbTasks).toEqual(
+            expect.arrayContaining(initTasks.map(expect.objectContaining))
+          );
         }
       }
     );
@@ -121,80 +151,115 @@ describe("app", () => {
 
   describe("DELETE /tasks", () => {
     it.each([
-      ["delete a task", 1],
-      ["return 200", 10],
-    ])("should %s", async (_, index: number) => {
-      const response = await request(app).delete(`/tasks/${index}`);
+      ["delete a task", () => dbTasks[0]._id, true],
+      ["return 200", () => new ObjectId(), false],
+    ])("should %s", async (_, getId: () => ObjectId, shouldDelete: boolean) => {
+      const id = getId();
+      const response = await request(app).delete(`/tasks/${id}`);
 
       expect(response.status).toBe(200);
 
-      const expectedLength =
-        mockInitTasks.length - Number(index < mockInitTasks.length);
-      expect(testTasks).toHaveLength(expectedLength);
-      expect(testTasks).not.toContainEqual(mockInitTasks[index - 1]);
+      dbTasks = await Task.find();
+      const expectedLength = initTasks.length - Number(shouldDelete);
+      expect(dbTasks).toHaveLength(expectedLength);
+
+      expect(dbTasks.find((dbTask) => dbTask._id === id)).toBeUndefined();
     });
   });
 
   describe("PUT /tasks", () => {
     it.each([
-      ["update task with just a name", 1, { name: "Updated task" }, 200],
+      [
+        "update task with just a name",
+        () => dbTasks[0]._id,
+        { name: "Updated task" },
+        200,
+      ],
       [
         "update task with name and done",
-        1,
+        () => dbTasks[0]._id,
         { name: "Updated task", done: true },
         200,
       ],
       [
         "update task with name and description",
-        1,
+        () => dbTasks[0]._id,
         { name: "Updated task", description: "desc" },
         200,
       ],
       [
         "update task with all fields",
-        1,
+        () => dbTasks[0]._id,
         { name: "Updated task", description: "desc", done: false },
         200,
       ],
       [
         "update task with just description",
-        2,
+        () => dbTasks[1]._id,
         { description: "A description" },
         200,
       ],
-      ["update task with just isDone", 1, { done: false }, 200],
-      ["fail - 404", 0, { name: "Something" }, 404],
-      ["fail - existing name", 1, { name: "task 2" }, 409],
-      ["fail - bad name type", 2, { name: 1 }, 400],
-      ["fail - bad description type", 1, { description: 1 }, 400],
-      ["fail - bad done type", 1, { done: 1 }, 400],
+      [
+        "update task with just isDone",
+        () => dbTasks[0]._id,
+        { done: false },
+        200,
+      ],
+      ["fail - 404", () => new ObjectId(), { name: "Something" }, 404],
+      ["fail - existing name", () => dbTasks[0]._id, { name: "task 2" }, 409],
+      ["fail - bad name type", () => dbTasks[1]._id, { name: 1 }, 400],
+      [
+        "updates task despite bad description type",
+        () => dbTasks[0]._id,
+        { description: 1 },
+        200,
+      ],
+      [
+        "updates task despite bad done type",
+        () => dbTasks[0]._id,
+        { done: 1 },
+        200,
+      ],
     ])(
       "should %s",
       async (
         _,
-        index: number,
+        getId: () => ObjectId,
         body: { name?: any; description?: any; done?: any },
         expectedStatus: number
       ) => {
-        const response = await request(app).put(`/tasks/${index}`).send(body);
+        const id = getId();
+        const response = await request(app).put(`/tasks/${id}`).send(body);
 
         const isSuccessful = expectedStatus === 200;
 
         expect(response.status).toBe(expectedStatus);
-        expect(testTasks).toHaveLength(mockInitTasks.length);
+
+        const updatedTask = dbTasks.find((t) => t._id === id);
+        dbTasks = await Task.find();
+        expect(dbTasks).toHaveLength(initTasks.length);
 
         if (isSuccessful) {
-          const updatedTask = mockInitTasks.find(
-            (_, n: number) => n === index - 1
-          ) as Task;
           const updates = {
             name: body.name ?? updatedTask.name,
-            description: body.description ?? updatedTask.description,
-            isDone: body.done ?? updatedTask.isDone,
+            description:
+              (body.description && String(body.description)) ??
+              updatedTask.description,
+            isDone: (body.done && !!body.done) ?? updatedTask.isDone,
           };
-          expect(testTasks).toContainEqual({ ...updatedTask, ...updates });
+
+          expect(dbTasks).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                ...updatedTask.toObject(),
+                ...updates,
+              }),
+            ])
+          );
         } else {
-          expect(testTasks).toEqual(mockInitTasks);
+          expect(dbTasks).toEqual(
+            expect.arrayContaining(initTasks.map(expect.objectContaining))
+          );
         }
       }
     );

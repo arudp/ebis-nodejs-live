@@ -1,24 +1,5 @@
 import { MongoClient, ServerApiVersion } from "mongodb";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-const mongoConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  host: process.env.DB_HOST,
-  connectionOptions: {
-    retryWrites: "true",
-    w: "majority",
-    appName: "Cluster0",
-  },
-
-  getURI: function () {
-    const urlParams = new URLSearchParams(this.connectionOptions);
-
-    return `mongodb+srv://${this.user}:${this.password}@${this.host}/?${urlParams}`;
-  },
-};
+import { mongoConfig } from "src/db/mongodb/config";
 
 const client = new MongoClient(mongoConfig.getURI(), {
   serverApi: {
@@ -28,12 +9,7 @@ const client = new MongoClient(mongoConfig.getURI(), {
   },
 });
 
-const dbName = process.env.DB_NAME;
-if (!dbName) {
-  process.exit("DB_NAME is required");
-}
-
-export { client, dbName as String };
+export { client };
 
 // Only run this if the file is executed directly
 if (require.main === module && process.argv.includes("--test")) {
