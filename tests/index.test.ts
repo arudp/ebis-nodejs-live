@@ -13,12 +13,27 @@ const connect = async (config: any) => {
     console.error("Error connecting to MongoDB:", error);
   }
 };
+
+function withoutDate(obj: any): any {
+  delete obj.dueDate;
+  return obj;
+}
 const disconnect = async () => await mongoose.disconnect();
 
 describe("app", () => {
   const initTasks: Array<any> = [
-    { name: "Task 1", description: "Description 1", isDone: true },
-    { name: "Task 2", description: "Another description", isDone: false },
+    {
+      name: "Task 1",
+      description: "Description 1",
+      isDone: true,
+      dueDate: Date.UTC(2025, 3, 23),
+    },
+    {
+      name: "Task 2",
+      description: "Another description",
+      isDone: false,
+      dueDate: Date.UTC(2025, 3, 25),
+    },
   ];
   let dbTasks: any[] = [];
 
@@ -56,7 +71,7 @@ describe("app", () => {
       [
         "by ids",
         () =>
-          `ids=${[new ObjectId().toString(), ...dbTasks.map((t: any) => t._id)].join(",")}`,
+          `ids=${[new ObjectId().toString(), ...dbTasks.map((t: any) => t._id), "bad_id"].join(",")}`,
         [0, 1],
       ],
     ])(
@@ -72,8 +87,8 @@ describe("app", () => {
           expectedTaskIndexes.includes(index)
         );
 
-        expect(response.body).toEqual(
-          expectedTasks.map((t: any) => t.toObject())
+        expect(response.body.map(withoutDate)).toEqual(
+          expectedTasks.map((t: any) => withoutDate(t.toObject()))
         );
       }
     );
@@ -87,11 +102,37 @@ describe("app", () => {
       expect(response.body.name).toBe(expectedTask.name);
       expect(response.body.description).toBe(expectedTask.description);
     });
-    it("should return 404", async () => {
-      const unmatchedObjectId = new ObjectId().toString();
-      const response = await request(app).get(`/tasks/${unmatchedObjectId}`);
-      expect(response.status).toBe(404);
-    });
+
+    it.each([new ObjectId().toString(), "bad_object_id"])(
+      "should return 404",
+      async (objectId: string) => {
+        const response = await request(app).get(`/tasks/${objectId}`);
+        expect(response.status).toBe(404);
+      }
+    );
+
+    it.each([
+      ["get the tasks", { from: "2025,03,23", to: "2025,03,25" }, 200, [0, 1]],
+    ])(
+      "by date, should - %s",
+      async (
+        _,
+        { from, to }: { [key: string]: string },
+        status: number,
+        expectedTaskIndexes: Array<number>
+      ) => {
+        const response = await request(app).get(`/tasks/${from}-${to}`);
+        expect(response.status).toBe(status);
+
+        const expectedTasks = dbTasks.filter((_: any, index: number) =>
+          expectedTaskIndexes.includes(index)
+        );
+
+        expect(response.body.map(withoutDate)).toEqual(
+          expectedTasks.map((t: any) => withoutDate(t.toObject()))
+        );
+      }
+    );
   });
   describe("POST /tasks", () => {
     it.each([
@@ -112,11 +153,14 @@ describe("app", () => {
         201,
       ],
       ["fail - empty name", { name: "" }, 400],
+      ["fail - short name", { name: "na" }, 400],
+      ["fail - long name", { name: "n".repeat(21) }, 400],
       ["fail - no name", { description: "A description" }, 400],
       ["fail - existing name", { name: "task 1" }, 409],
       ["fail - bad name type", { name: 1 }, 400],
+      ["fail - long description", { description: "d".repeat(101) }, 400],
       ["fail - bad description type", { description: 1 }, 400],
-      ["create task despite bad done type", { name: "a name", done: 1 }, 201],
+      ["fail - bad done type", { name: "a name", done: 1 }, 400],
     ])(
       "should %s",
       async (
@@ -138,11 +182,15 @@ describe("app", () => {
             newTask.description = body.description;
           }
           expect(dbTasks).toEqual(
-            expect.arrayContaining([expect.objectContaining(newTask)])
+            expect.arrayContaining([
+              expect.objectContaining(withoutDate(newTask)),
+            ])
           );
         } else {
           expect(dbTasks).toEqual(
-            expect.arrayContaining(initTasks.map(expect.objectContaining))
+            expect.arrayContaining(
+              initTasks.map((t) => expect.objectContaining(withoutDate(t)))
+            )
           );
         }
       }
@@ -153,6 +201,7 @@ describe("app", () => {
     it.each([
       ["delete a task", () => dbTasks[0]._id, true],
       ["return 200", () => new ObjectId(), false],
+      ["return 200 invalid id", () => "bad_object_id", false],
     ])("should %s", async (_, getId: () => ObjectId, shouldDelete: boolean) => {
       const id = getId();
       const response = await request(app).delete(`/tasks/${id}`);
@@ -206,20 +255,24 @@ describe("app", () => {
         200,
       ],
       ["fail - 404", () => new ObjectId(), { name: "Something" }, 404],
+      ["fail - 404 bad id", () => "bad_object_id", { name: "Something" }, 404],
       ["fail - existing name", () => dbTasks[0]._id, { name: "task 2" }, 409],
+      ["fail - short name", () => dbTasks[0]._id, { name: "ta" }, 400],
+      ["fail - long name", () => dbTasks[0]._id, { name: "x".repeat(21) }, 400],
+      [
+        "fail - long description",
+        () => dbTasks[0]._id,
+        { description: "x".repeat(101) },
+        400,
+      ],
       ["fail - bad name type", () => dbTasks[1]._id, { name: 1 }, 400],
       [
-        "updates task despite bad description type",
+        "fail - bad description type",
         () => dbTasks[0]._id,
         { description: 1 },
-        200,
+        400,
       ],
-      [
-        "updates task despite bad done type",
-        () => dbTasks[0]._id,
-        { done: 1 },
-        200,
-      ],
+      ["fail - bad done type", () => dbTasks[0]._id, { done: 1 }, 400],
     ])(
       "should %s",
       async (
@@ -251,14 +304,16 @@ describe("app", () => {
           expect(dbTasks).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                ...updatedTask.toObject(),
+                ...withoutDate(updatedTask.toObject()),
                 ...updates,
               }),
             ])
           );
         } else {
           expect(dbTasks).toEqual(
-            expect.arrayContaining(initTasks.map(expect.objectContaining))
+            expect.arrayContaining(
+              initTasks.map((t) => expect.objectContaining(withoutDate(t)))
+            )
           );
         }
       }

@@ -22,6 +22,7 @@
     "test-get-by-ids": "jest tests/index.test.ts -t 'GET.*by ids'",
     "test-get-indexed-task": "jest tests/index.test.ts -t 'GET.*return only the indexed task'",
     "test-get-404": "jest tests/index.test.ts -t 'GET.*return 404'",
+    "test-by-date": "jest tests/index.test.ts -t 'GET.*by date.*'",
     "test-post-create-just-name": "jest tests/index.test.ts -t 'POST.*create new task with just a name'",
     "test-post-create-name-done": "jest tests/index.test.ts -t 'POST.*create new task with name and done'",
     "test-post-create-name-description": "jest tests/index.test.ts -t 'POST.*create new task with name and description'",

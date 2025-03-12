@@ -1,10 +1,15 @@
-import express, { Express, Request, Response } from "express";
-import { readUsers, writeUsers } from "./file-ops";
-import { Task, User } from "./types";
-import { TaskDAO } from "src/db/dao/tasks";
-import { NotFoundError } from "./db/errors";
-import { MongooseConnection } from "./db/mongodb/mongoose";
-import { TaskModel } from "src/db/models/task";
+import express, { Express, NextFunction, Request, Response } from "express";
+import { MongooseConnection } from "src/db/mongodb/mongoose";
+import { Task } from "src/db/models/task";
+import { ObjectId } from "mongodb";
+import { User } from "src/db/models/user";
+import { NotFoundError } from "src/db/errors";
+import { AuthError, ValidationError } from "src/errors";
+import { handleErrors } from "src/middlewares/error";
+import { logRequest } from "src/middlewares/application";
+import { findOrFail } from "src/middlewares/route";
+import { Body, HasDocument, QueryParams } from "src/types";
+import taskRouter from "src/routes/tasks";
 
 const app: Express = express();
 const port: number = 3000;
@@ -13,168 +18,170 @@ app.use(express.static("public"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+app.use(logRequest);
+
+app.use("/tasks", taskRouter);
+
 app.get("/", (req: Request, res: Response) => {
   res.redirect("/tasks");
 });
 
-const tasksDAO = new TaskDAO();
+// TODO: Create a new route that returns tasks due in a date range, such as
+// GET tasks/2025,03,23-2025,03,25 to get tasks with due dates between March's 23rd
+// and 25th.
+// This means the format is YYYYMMDD, not including hours, minutes or seconds!
+// It must also validate that the second date is greater or equal to the first
+// one or return a 400
+// Use Date.UTC for consistent results!
 
-app.get("/tasks", async (req: Request, res: Response) => {
-  // TODO: Allow filtering by name/description/isDone/comma-separated ids
-  // as we did with the file-based tasks
-  try {
-    res.send(await TaskModel.find());
-  } catch (error) {
-    console.error("Error reading tasks from DB:", error);
-    res.status(500).send();
-  }
-});
+app.post("/tasks", async (req: Request, res: Response, next: NextFunction) => {
+  const { name, description, done } = req.body as Body;
 
-app.get("/tasks/:id", async (req: Request, res: Response) => {
-  try {
-    const task = await TaskModel.findById(req.params.id);
-    if (task) {
-      res.send(task);
-    } else {
-      res.sendStatus(404);
-    }
-  } catch (error) {
-    console.error("Error reading task from DB:", error);
-    res.status(500).send("Error reading task");
-  }
-});
+  // TODO: Validate in middleware (use the same one for PUT)
+  // - Task name between 3 - 20 chars if given
+  // - Description from 0 to 100 chars if given
+  // - Due date - ISO 8601 (comes as due_date and is stored as dueDate)
+  // - Date can't be earlier than now
+  // - Types are the expected ones for all fields, when present
+  // TODO: Extra POST validation
+  // - Task name is required
+  // - isDone defaults to false if not present
 
-app.post("/tasks", async (req: Request, res: Response) => {
-  const { name, description, done } = req.body;
-  // TODO: Error on repeated names and bad params as we did on the file ones
-  const newTask = new TaskModel({ name, description, isDone: done });
+  const newTask = new Task({ name, description, isDone: done });
 
   try {
     await newTask.save();
-    console.log("Task added", newTask);
     res.sendStatus(201);
   } catch (error) {
-    console.error("Error adding task to DB:", error);
-    res.sendStatus(500);
+    next(error);
   }
 });
 
-app.delete("/tasks/:id", async (req: Request, res: Response) => {
-  const id = req.params.id;
+app.delete(
+  "/tasks/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id;
 
-  try {
-    await TaskModel.findByIdAndDelete(id);
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("Error deleting tasks in DB:", error);
-    res.sendStatus(500);
-  }
-});
-
-app.put("/tasks/:id", async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const { name, description, done } = req.body;
-  const update: any = {};
-
-  if (!!name) update.name = name;
-  if (!!description) update.description = description;
-  if (!!done) update.isDone = done;
-
-  try {
-    const updatedTask = await TaskModel.findByIdAndUpdate(
-      id,
-      { $set: update },
-      { new: true, runValidators: true }
-    );
-    if (!updatedTask) {
-      res.sendStatus(404);
-    } else {
-      res.send(updatedTask);
+    try {
+      await Task.findByIdAndDelete(id);
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
     }
-  } catch (error) {
-    console.error("Error updating task in DB:", error);
-    res.status(500).send("Error updating task");
   }
-});
+);
 
-app.get("/users", (req, res) => {
+app.put(
+  "/tasks/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id;
+    const { name, description, done } = req.body;
+    const update: any = {};
+
+    // TODO: Validate in middleware (use the same one for POST)
+    // - Task name between 3 - 20 chars if given
+    // - Description from 0 to 100 chars if given
+    // - Due date - ISO 8601 (comes as due_date and is stored as dueDate)
+    // - Date can't be earlier than now
+    // - Types are the expected ones for all fields, when present otherwise 400
+
+    if (!!name) {
+      if (typeof name !== "string") {
+        next(new ValidationError("Name is required"));
+        return;
+      }
+    }
+
+    if (!!description) update.description = description;
+    if (done !== undefined) update.isDone = done;
+
+    try {
+      const updatedTask = await Task.findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true, runValidators: true }
+      );
+      if (!updatedTask) {
+        next(new NotFoundError(Task.modelName));
+      } else {
+        res.send(updatedTask);
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+app.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   const params = req.query;
 
-  let users: User[] = readUsers();
+  const findParams: { [key: string]: any } = {};
+  const { name, email, ids } = params as QueryParams;
 
-  if (params) {
-    const { name, email, index } = params;
-
-    users = users.filter((user, userIndex) => {
-      if (
-        name &&
-        !user.name.toLowerCase().includes(String(name).toLowerCase())
-      ) {
-        return false;
-      }
-      if (
-        email &&
-        !user.email.toLowerCase().includes(String(email).toLowerCase())
-      ) {
-        return false;
-      }
-      if (index && userIndex != Number(index)) {
-        return false;
-      }
-      return true;
-    });
+  Object.entries({ name, email }).forEach(([k, v]) => {
+    if (v !== undefined) findParams[k] = { $regex: v, $options: "i" };
+  });
+  if (ids != undefined) {
+    findParams._id = { $in: ids.split(",").map((id) => new ObjectId(id)) };
   }
 
-  res.send(users.map((user: User) => ({ name: user.name, email: user.email })));
-});
-
-app.get("/users/:index", (req, res) => {
-  const user = readUsers()[Number(req.params.index) - 1];
-  if (user) {
-    res.send({ name: user.name, email: user.email });
-  } else {
-    res.status(404).send();
+  try {
+    res.send(await User.find(findParams).exec());
+  } catch (error) {
+    next(error);
   }
 });
 
-app.post("/register", (req, res) => {
-  const { name, email, password } = req.body;
-  if (
-    !name ||
-    !email ||
-    !password ||
-    typeof name != "string" ||
-    typeof email != "string" ||
-    typeof password != "string"
-  ) {
-    res.status(400).send("name, email and password required");
-  } else {
+app.get("/users/:id", findOrFail(User), (req: Request, res: Response) => {
+  res.send((req as HasDocument).document.toObject());
+});
+
+app.post(
+  "/register",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { name, email, password } = req.body;
+    if (
+      [name, email, password].find(
+        (field) => !field || typeof field != "string"
+      )
+    ) {
+      next(new ValidationError("name, email and password required"));
+      return;
+    }
+
     const [beforeAt, afterAt] = String(email).split("@");
     if (!beforeAt || !afterAt || afterAt.split(".").length != 2) {
-      res.status(400).send("email has to follow pattern xxx@yyy.zzz");
-    } else {
-      writeUsers([...readUsers(), { name, email, password }]);
-      res.send(201);
+      next(new ValidationError("email has to follow pattern xxx@yyy.zzz"));
+      return;
     }
+
+    const newUser = new User({ name, email, password });
+
+    try {
+      await newUser.save();
+      res.sendStatus(201);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+app.post("/login", async (req: Request, res: Response, next: NextFunction) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    next(new ValidationError("Name and password are required"));
+    return;
+  }
+
+  const user = await User.findOne({ email, password }).exec();
+  if (!user) {
+    next(new AuthError("Email or password are wrong"));
+  } else {
+    res.sendStatus(200);
   }
 });
 
-app.post("/login", (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400).send("email and password required");
-  } else {
-    const user = readUsers().find(
-      (user) => user.email === email && user.password === password
-    );
-    console.log(email, password, user);
-    if (user) {
-      res.send({ name: user.name, email: user.email });
-    } else {
-      res.status(401).send("Wrong credentials");
-    }
-  }
-});
+app.use(handleErrors);
 
 export { app };
 

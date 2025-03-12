@@ -7,8 +7,10 @@ En el archivo `package.json` se encuentran los scripts que se pueden ejecutar
   Inicia el servidor de desarrollo. Se puede acceder a él en `http://localhost:3000`.
 * `test`  
   Ejecuta los tests.
-* `test-all-[get/post/delete/update]`  
+* `test-[get/post/delete/update]-tasks`  
   Ejecuta todos los tests para el método indicado.
 
-En esta ocasión hay muchas formas de completar cualquiera de los tests. Podemos optar por utilizar más o menos funcionalides de Mongoose o implementar nosotros mismos las validaciones en TypeScript.  
-Lo importante por ahora es experimentar y ver cómo conseguimos que los tests pasen. Una vez pasen, podemos probar formas distintas de hacerlo.
+De nuevo hay muchas formas de completar cualquiera de los tests, sin embargo estaría mejor enfatizar el control de errores y validación de datos en los middleware.  
+Los tests sólo verifican que el código crea la respuesta y las entradas de base de datos correctas, pero no dónde se hace.  
+
+Como siempre, es mejor primero experimentar y ver cómo conseguimos que los tests pasen. Una vez pasen, podemos probar formas distintas de hacerlo.
