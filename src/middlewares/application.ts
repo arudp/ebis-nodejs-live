@@ -17,3 +17,20 @@ export function logRequest(
 
   next();
 }
+
+type HasName = { name: string };
+
+export function logLoggedInInfo(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.isAuthenticated()) {
+    console.log(`^  Logged in as ${(req.user as HasName).name}`);
+  } else {
+    console.log(`^  Not logged in`);
+  }
+  console.log();
+
+  next();
+}
