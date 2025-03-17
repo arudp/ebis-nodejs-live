@@ -5,6 +5,7 @@ import { ObjectId } from "mongodb";
 import { findOrFail } from "src/middlewares/route";
 import passport from "passport";
 import { localStrategy } from "src/middlewares/auth/local";
+import { ensureAuthenticated, jwtStrategy } from "src/middlewares/auth/jwt";
 
 const router = Router();
 export default router;
@@ -28,13 +29,13 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     next(error);
   }
 });
-router.get(
-  "/me",
-  localStrategy.ensureAuthenticated,
-  (req: Request, res: Response) => {
+router.get("/me", ensureAuthenticated, (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.send(401);
+  } else {
     res.send(req.user);
   }
-);
+});
 
 router.get("/:id", findOrFail(User), (req: Request, res: Response) => {
   res.send((req as HasDocument).document.toObject());

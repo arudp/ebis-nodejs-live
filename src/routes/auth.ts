@@ -1,14 +1,19 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { AuthError, ValidationError } from "src/errors";
+import { ValidationError } from "src/errors";
 import { User } from "src/db/models/user";
 import passport from "passport";
 import { localStrategy } from "src/middlewares/auth/local";
-import { Document } from "mongoose";
+import {
+  ensureAuthenticated,
+  jwtStrategy,
+  withToken,
+} from "src/middlewares/auth/jwt";
 
 const router = Router();
 export default router;
 
 passport.use(localStrategy.name, localStrategy.strategy);
+passport.use(jwtStrategy.name, jwtStrategy.strategy);
 
 passport.serializeUser((user: any, done) => {
   process.nextTick(() => done(null, user.id));
@@ -29,25 +34,27 @@ router.get("/login", (req: Request, res: Response) => {
 
 router.post(
   "/logout",
-  localStrategy.ensureAuthenticated,
+  ensureAuthenticated,
   (req: Request, res: Response, next: NextFunction) => {
-    req.logout((err?: Error) => {
-      if (err) {
-        next(err);
-      } else {
-        res.redirect("/login");
-      }
-    });
+    res.send(200); // No logging out with JWT - could add token to blacklist
   }
 );
 
-router.post(
-  "/login",
-  passport.authenticate(localStrategy.name, { failureRedirect: "/login" }),
-  (req: Request, res: Response, next: NextFunction) => {
-    res.redirect("/");
-  }
-);
+router.post("/login", (req: Request, res: Response, next: NextFunction) => {
+  passport.authenticate(
+    localStrategy.name,
+    { session: false },
+    (err: any, user?: Express.User | false | null) => {
+      if (err) {
+        return next(err);
+      }
+      if (!user) {
+        return res.status(401).redirect("/login");
+      }
+      return res.send(withToken(user));
+    }
+  )(req, res, next);
+});
 
 router.post(
   "/register",

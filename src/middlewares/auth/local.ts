@@ -2,6 +2,7 @@ import passport from "passport";
 import { Request, Response, NextFunction } from "express";
 import { Strategy, IStrategyOptionsWithRequest } from "passport-local";
 import { User } from "src/db/models/user";
+import { withToken } from "src/middlewares/auth/jwt";
 
 // Options object, we tell Passport what fields are the ones to use as
 // username and password fields, in this case, email and password
@@ -11,8 +12,10 @@ const strategyOptions: IStrategyOptionsWithRequest = {
   passwordField: "password",
 };
 
+const strategyName = "local";
+
 export const localStrategy = {
-  name: "local",
+  name: strategyName,
 
   strategy: new Strategy(
     strategyOptions,
@@ -29,41 +32,10 @@ export const localStrategy = {
       }
 
       if (user.password === password) {
-        return done(null, user);
+        return done(null, user.toObject());
       } else {
         return done(null, false, { message: "Incorrect password" });
       }
     }
   ),
-  getAuthenticationFunction: function (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) {
-    return passport.authenticate(
-      this.name,
-      (err: any, user: any, info: any) => {
-        if (err) {
-          return next(err);
-        }
-        if (!user) {
-          return res.status(401).send({ message: info.message });
-        }
-
-        req.login(user, (err: Error) => {
-          if (err) {
-            next(err);
-          }
-          res.send(user);
-        });
-      }
-    );
-  },
-  ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => {
-    if (req.isAuthenticated()) {
-      next();
-    } else {
-      res.sendStatus(401);
-    }
-  },
 };

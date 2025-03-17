@@ -5,12 +5,29 @@ Para empezar a trabajar con el proyecto, es necesario instalar las dependencias 
 En el archivo `package.json` se encuentran los scripts que se pueden ejecutar
 * `dev`  
   Inicia el servidor de desarrollo. Se puede acceder a él en `http://localhost:3000`.
-* `test`  
-  Ejecuta los tests.
-* `test-[get/post/delete/update]-tasks`  
-  Ejecuta todos los tests para el método indicado.
 
-De nuevo hay muchas formas de completar cualquiera de los tests, sin embargo estaría mejor enfatizar el control de errores y validación de datos en los middleware.  
-Los tests sólo verifican que el código crea la respuesta y las entradas de base de datos correctas, pero no dónde se hace.  
+## Propuestas de ejercicios
+### Añadir roles a los usuarios
+Los roles pueden ser `admin` o `writer`.
+* Los `admin` pueden
+  * Asignar roles a otros usuarios.
+  * Actualizar la lista de `participats` de una tarea (ver ejercicios temas anteriores)
+  * Ver y editar usuarios
+* Los `writer` pueden
+  * Crear tareas
+  * Actualizar tareas en las que participan
+  * Ver tareas en las que participan
+  * Ver su propio usuario
 
-Como siempre, es mejor primero experimentar y ver cómo conseguimos que los tests pasen. Una vez pasen, podemos probar formas distintas de hacerlo.
+Es mejor hacer las partes que se puedan aunque dejemos alguna sin hacer, ¡no es todo o nada!  
+Aquí tenemos **dos ejemplos** de estrategias de autorización:
+* RBAC (Role Based Access Control) para los roles `admin` y `writer`
+* ReBAC (Relationship Based Access Control) para las tareas (solo los `participats` pueden ver y editar la tarea)
+
+### Log out con JWT
+Una cosa importante **que no mencioné en clase** es que los tokens JWT **no se pueden invalidar**.
+
+¿Qué hacemos para que un usuario no pueda seguir accediendo a la aplicación una vez ha cerrado sesión?  
+Una opción habitual es tener una lista de tokens revocados.
+* En `POST /logout`, añade el token a la lista de tokens revocados.
+* En la estrategia de autenticación de JWT, comprueba si el token está en la lista de tokens revocados, en cuyo caso **no** se autoriza la petición.
