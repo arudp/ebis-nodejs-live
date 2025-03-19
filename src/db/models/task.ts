@@ -50,12 +50,7 @@ const taskSchema = new Schema(
   }
 );
 (taskSchema.query as any).byName = function (name: string) {
-  return this.where({
-    name: {
-      $regex: `^${name}$`,
-      $options: "i",
-    },
-  });
+  return this.where({ name: { $regex: `^${name}$`, $options: "i" } });
 };
 
 // Add the type declaration to extend Mongoose's Query interface

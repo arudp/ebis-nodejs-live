@@ -6,28 +6,11 @@ En el archivo `package.json` se encuentran los scripts que se pueden ejecutar
 * `dev`  
   Inicia el servidor de desarrollo. Se puede acceder a él en `http://localhost:3000`.
 
-## Propuestas de ejercicios
-### Añadir roles a los usuarios
-Los roles pueden ser `admin` o `writer`.
-* Los `admin` pueden
-  * Asignar roles a otros usuarios.
-  * Actualizar la lista de `participats` de una tarea (ver ejercicios temas anteriores)
-  * Ver y editar usuarios
-* Los `writer` pueden
-  * Crear tareas
-  * Actualizar tareas en las que participan
-  * Ver tareas en las que participan
-  * Ver su propio usuario
+> **Nota:**  
+> Fijaos especialmente en el `GET /tasks` para ver la paginación que no nos ha dado tiempo a ver en clase.  
+> Para usarla se utilizan **query params** de la forma `localhost:3000/tasks?from=2023-03-17&sort=due_date,DESC&sort=name,ASC`. Éste, por ejemplo, devolvería las tareas a partir del 17 de marzo de 2023, ordenadas por fecha de vencimiento descendente y nombre ascendente.
 
-Es mejor hacer las partes que se puedan aunque dejemos alguna sin hacer, ¡no es todo o nada!  
-Aquí tenemos **dos ejemplos** de estrategias de autorización:
-* RBAC (Role Based Access Control) para los roles `admin` y `writer`
-* ReBAC (Relationship Based Access Control) para las tareas (solo los `participats` pueden ver y editar la tarea)
+### Ejercicios
+Tenéis los ejercicios propuestos habituales de validación. Sería interesante implementarlos con `sequelize` para ver cómo se pueden hacer.
 
-### Log out con JWT
-Una cosa importante **que no mencioné en clase** es que los tokens JWT **no se pueden invalidar**.
-
-¿Qué hacemos para que un usuario no pueda seguir accediendo a la aplicación una vez ha cerrado sesión?  
-Una opción habitual es tener una lista de tokens revocados.
-* En `POST /logout`, añade el token a la lista de tokens revocados.
-* En la estrategia de autenticación de JWT, comprueba si el token está en la lista de tokens revocados, en cuyo caso **no** se autoriza la petición.
+Además, hay unas cuantas propuestas en el archivo `reset-tables.sql`, tanto de SQL como de endpoints.

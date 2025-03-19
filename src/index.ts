@@ -34,7 +34,10 @@ export { app };
 
 // Start only if it's executed directly, not imported
 if (require.main === module) {
-  MongooseConnection.connect().then(() => {
+  (async () => {
+    await MongooseConnection.connect();
+    // await MySQL.connect();
+
     app
       .listen(port, () => {
         console.log(`Example app listening on port ${port}`);
@@ -42,5 +45,5 @@ if (require.main === module) {
       .on("close", async () => {
         await MongooseConnection.disconnect();
       });
-  });
+  })();
 }

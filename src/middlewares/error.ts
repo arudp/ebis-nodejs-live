@@ -11,7 +11,8 @@ export function handleErrors(
       res.status(401).send(err.message || "Unauthorized");
       break;
     case "ValidationError":
-      res.status(400).send("Invalid data: " + err.message);
+    case "SequelizeValidationError":
+      res.status(400).send(err.message);
       break;
     case "NotFoundError":
       res.status(404).send(err.message || "Not Found");
